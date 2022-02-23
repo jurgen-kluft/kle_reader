@@ -1,4 +1,6 @@
+#include "kle_reader/kle_reader.h"
 #include "xjsmn/x_jsmn.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,163 +11,111 @@
 
 namespace kle
 {
-    struct color_t
+    static int to_digit(char c)
     {
-        inline color_t()
-            : m_r(0)
-            , m_g(0)
-            , m_b(0)
-            , m_a(255)
-        {
-        }
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+            return c - 'A' + 10;
+        return 0;
+    }
 
-        bool operator==(const color_t& rhs) const { return m_r == rhs.m_r && m_g == rhs.m_g && m_b == rhs.m_b && m_a == rhs.m_a; }
-        bool operator!=(const color_t& rhs) const { return !(*this == rhs); }
-
-        unsigned char m_r;
-        unsigned char m_g;
-        unsigned char m_b;
-        unsigned char m_a;
-    };
-
-    // strings are pointing into the raw json data and have
-    // thus only a beginning and an end.
-    struct str_t
+    static char to_lower(char c)
     {
-        inline str_t()
-            : m_begin(-1)
-            , m_end(-1)
+        if (c >= 'A' && c <= 'Z')
+            return c - 'A' + 'a';
+        return c;
+    }
+
+    color_t str_t::to_color(const char* json) const
+    {
+        color_t c;
+        if (m_begin == -1 || m_end == -1)
+            return c;
+
+        const char* str = json + m_begin;
+
+        // parse color
+        if (str[0] == '#')
         {
-        }
-        inline str_t(int begin, int end)
-            : m_begin(begin)
-            , m_end(end)
-        {
-        }
-
-        bool is_null() const { return m_begin == -1 && m_begin == m_end; }
-
-        static int to_digit(char c)
-        {
-            if (c >= '0' && c <= '9')
-                return c - '0';
-            if (c >= 'a' && c <= 'f')
-                return c - 'a' + 10;
-            if (c >= 'A' && c <= 'F')
-                return c - 'A' + 10;
-            return 0;
-        }
-
-        color_t to_color(const char* json) const
-        {
-            color_t c;
-            if (m_begin == -1 || m_end == -1)
-                return c;
-
-            const char* str = json + m_begin;
-
-            // parse color
-            if (str[0] == '#')
+            if ((m_end - m_begin) >= 7)
             {
-                if ((m_end - m_begin) >= 7)
+                c.m_r = to_digit(str[1]) * 16 + to_digit(str[2]);
+                c.m_g = to_digit(str[3]) * 16 + to_digit(str[4]);
+                c.m_b = to_digit(str[5]) * 16 + to_digit(str[6]);
+                c.m_a = 255;
+                if ((m_end - m_begin) == 9)
                 {
-                    c.m_r = to_digit(str[1]) * 16 + to_digit(str[2]);
-                    c.m_g = to_digit(str[3]) * 16 + to_digit(str[4]);
-                    c.m_b = to_digit(str[5]) * 16 + to_digit(str[6]);
-                    c.m_a = 255;
-                    if ((m_end - m_begin) == 9)
-                    {
-                        c.m_a = to_digit(str[7]) * 16 + to_digit(str[8]);
-                    }
+                    c.m_a = to_digit(str[7]) * 16 + to_digit(str[8]);
                 }
             }
-            return c;
         }
+        return c;
+    }
 
-        int to_int(const char* json) const
+    int str_t::to_int(const char* json) const
+    {
+        if (m_begin == -1 || m_end == -1)
+            return 0;
+        const char* str  = json + m_begin;
+        const char* end  = json + m_end;
+        int         val  = 0;
+        int         sign = 1;
+        if (*str == '-')
         {
-            if (m_begin == -1 || m_end == -1)
-                return 0;
-            const char* str  = json + m_begin;
-            const char* end  = json + m_end;
-            int         val  = 0;
-            int         sign = 1;
-            if (*str == '-')
-            {
-                sign = -1;
-                str++;
-            }
-            while (str < end)
-            {
-                val = val * 10 + (*str - '0');
-                str++;
-            }
-            return val * sign;
+            sign = -1;
+            str++;
         }
+        while (str < end)
+        {
+            val = val * 10 + (*str - '0');
+            str++;
+        }
+        return val * sign;
+    }
 
-        int m_begin;
-        int m_end;
-    };
-
-    struct key_t
+    bool str_t::to_bool(const char* json) const
     {
-        color_t m_color;
-        str_t   m_labels[KLE_LABEL_MAX];
-        color_t m_textColor[KLE_LABEL_MAX];
-        int     m_textSize[KLE_LABEL_MAX];
-        color_t m_default_textColor;
-        int     m_default_textSize;
-        int     m_x;
-        int     m_y;
-        int     m_width;
-        int     m_height;
-        int     m_x2;
-        int     m_y2;
-        int     m_width2;
-        int     m_height2;
-        int     m_rotation_x;
-        int     m_rotation_y;
-        int     m_rotation_angle;
-        int     m_decal;
-        int     m_ghost;
-        int     m_stepped;
-        int     m_nub;
-        str_t   m_profile;
-        str_t   m_sm;
-        str_t   m_sb;
-        str_t   m_st;
-    };
+        if (m_begin == -1 || m_end == -1)
+            return 0;
 
-    static void init(key_t key)
+        const char* str = json + m_begin;
+        const int   len = m_end - m_begin;
+        bool        val = false;
+        if (len == 4 && to_lower(str[0]) == 't' && to_lower(str[1]) == 'r' && to_lower(str[2]) == 'u' && to_lower(str[3]) == 'e')
+            val = true;
+        return val;
+    }
+
+    static void init(key_t& key)
     {
-        key.m_color = color_t();
+        key.m_color = color_t(0xcc, 0xcc, 0xcc);
         for (int i = 0; i < KLE_LABEL_MAX; ++i)
         {
             key.m_labels[i]    = str_t();
-            key.m_textColor[i] = color_t();
-            key.m_textSize[i]  = 0;
+            key.m_textColor[i] = color_t(0x00, 0x00, 0x00);
+            key.m_textSize[i]  = 3;
         }
         key.m_default_textColor = color_t();
         key.m_default_textSize  = 0;
         key.m_x                 = 0;
         key.m_y                 = 0;
-        key.m_width             = 0;
-        key.m_height            = 0;
+        key.m_width             = 1;
+        key.m_height            = 1;
         key.m_x2                = 0;
         key.m_y2                = 0;
-        key.m_width2            = 0;
-        key.m_height2           = 0;
+        key.m_width2            = 1;
+        key.m_height2           = 1;
         key.m_rotation_x        = 0;
         key.m_rotation_y        = 0;
         key.m_rotation_angle    = 0;
-        key.m_decal             = 0;
-        key.m_ghost             = 0;
-        key.m_stepped           = 0;
-        key.m_nub               = 0;
+        key.m_decal             = false;
+        key.m_ghost             = false;
+        key.m_stepped           = false;
+        key.m_nub               = false;
         key.m_profile           = str_t();
-        key.m_sm                = str_t();
-        key.m_sb                = str_t();
-        key.m_st                = str_t();
     }
 
     static key_t copy(key_t const& key)
@@ -196,17 +146,8 @@ namespace kle
         result.m_stepped           = key.m_stepped;
         result.m_nub               = key.m_nub;
         result.m_profile           = key.m_profile;
-        result.m_sm                = key.m_sm;
-        result.m_sb                = key.m_sb;
-        result.m_st                = key.m_st;
         return result;
     }
-
-    struct bkgrnd_t
-    {
-        str_t m_name;
-        str_t m_style;
-    };
 
     static void init(bkgrnd_t bkgrnd)
     {
@@ -214,23 +155,10 @@ namespace kle
         bkgrnd.m_style = str_t();
     }
 
-    struct kb_metadata_t
-    {
-        str_t    m_author;
-        color_t  m_backcolor;
-        bkgrnd_t m_background;
-        str_t    m_name;
-        str_t    m_notes;
-        str_t    m_radii;
-        str_t    m_switchBrand;
-        str_t    m_switchMount;
-        str_t    m_switchType;
-    };
-
     static void init(kb_metadata_t& kb_metadata)
     {
         kb_metadata.m_author             = str_t();
-        kb_metadata.m_backcolor          = color_t();
+        kb_metadata.m_backcolor          = color_t(0xee, 0xee, 0xee);
         kb_metadata.m_background.m_name  = str_t();
         kb_metadata.m_background.m_style = str_t();
         kb_metadata.m_name               = str_t();
@@ -240,13 +168,6 @@ namespace kle
         kb_metadata.m_switchMount        = str_t();
         kb_metadata.m_switchType         = str_t();
     }
-
-    struct kb_t
-    {
-        kb_metadata_t m_meta;
-        int           m_nb_keys;
-        key_t         m_keys[KLE_KEY_MAX];
-    };
 
     static void init(kb_t& kb)
     {
@@ -265,18 +186,24 @@ namespace kle
     }
 
     static int labelMap[8][12] = {
-        {0, 6, 2, 8, 9, 11, 3, 5, 1, 4, 7, 10},         {1, 7, -1, -1, 9, 11, 4, -1, -1, -1, -1, 10},    {3, -1, 5, -1, 9, 11, -1, -1, 4, -1, -1, 10},
-        {4, -1, -1, -1, 9, 11, -1, -1, -1, -1, -1, 10}, {0, 6, 2, 8, 10, -1, 3, 5, 1, 4, 7, -1},         {1, 7, -1, -1, 10, -1, 4, -1, -1, -1, -1, -1},
-        {3, -1, 5, -1, 10, -1, -1, -1, 4, -1, -1, -1},  {4, -1, -1, -1, 10, -1, -1, -1, -1, -1, -1, -1},
+        {0, 6, 2, 8, 9, 11, 3, 5, 1, 4, 7, 10},          /* row 0*/
+        {1, 7, -1, -1, 9, 11, 4, -1, -1, -1, -1, 10},    /* row 1*/
+        {3, -1, 5, -1, 9, 11, -1, -1, 4, -1, -1, 10},    /* row 2*/
+        {4, -1, -1, -1, 9, 11, -1, -1, -1, -1, -1, 10},  /* row 3*/
+        {0, 6, 2, 8, 10, -1, 3, 5, 1, 4, 7, -1},         /* row 4*/
+        {1, 7, -1, -1, 10, -1, 4, -1, -1, -1, -1, -1},   /* row 5*/
+        {3, -1, 5, -1, 10, -1, -1, -1, 4, -1, -1, -1},   /* row 6*/
+        {4, -1, -1, -1, 10, -1, -1, -1, -1, -1, -1, -1}, /* row 7*/
     };
 
-    static void reorderLabelsIn(str_t labels[KLE_LABEL_MAX], jsmntok_t const& token, int align)
+    static void reorderLabelsIn(str_t labels[KLE_LABEL_MAX], int align)
     {
         str_t ret[KLE_LABEL_MAX];
-        for (int i = 0; i < KLE_LABEL_MAX; ++i)
+
+		for (int i = 0; i < KLE_LABEL_MAX; ++i)
         {
-            if (!labels[i].is_null())
-            {
+			if (labelMap[align][i]>=0)
+			{
                 ret[labelMap[align][i]].m_begin = labels[i].m_begin;
                 ret[labelMap[align][i]].m_end   = labels[i].m_end;
             }
@@ -287,18 +214,39 @@ namespace kle
         }
     }
 
-    static void reorderLabelsIn(color_t colors[KLE_LABEL_MAX], jsmntok_t const& token, int align)
+	static void reorderLabelsIn(int sizes[KLE_LABEL_MAX], int align)
+	{
+		int ret[KLE_LABEL_MAX];
+		for (int i = 0; i < KLE_LABEL_MAX; ++i)
+			ret[i] = 0;
+		
+		for (int i = 0; i < KLE_LABEL_MAX; ++i)
+		{
+			if (labelMap[align][i]>=0)
+				ret[labelMap[align][i]] = sizes[i];
+		}
+		for (int i = 0; i < KLE_LABEL_MAX; ++i)
+		{
+			sizes[i] = ret[i];
+		}
+	}
+
+
+    static void reorderLabelsIn(color_t colors[KLE_LABEL_MAX], int align)
     {
         color_t ret[KLE_LABEL_MAX];
-        for (int i = 0; i < KLE_LABEL_MAX; ++i)
+
+		for (int i = 0; i < KLE_LABEL_MAX; ++i)
         {
-            ret[labelMap[align][i]] = colors[i];
+			if (labelMap[align][i]>=0)
+				ret[labelMap[align][i]] = colors[i];
         }
         for (int i = 0; i < KLE_LABEL_MAX; ++i)
         {
             colors[i] = ret[i];
         }
     }
+
     struct item_t
     {
         str_t a;
@@ -328,7 +276,7 @@ namespace kle
     static int split(const char* json, str_t& item, char split, str_t* items_out, int max_items_out)
     {
         if (item.is_null())
-            return;
+            return 0;
 
         const char* str = json + item.m_begin;
         const char* end = json + item.m_end;
@@ -342,8 +290,8 @@ namespace kle
             {
                 ++next;
             }
-            items_out[nb_items].m_begin = str - json;
-            items_out[nb_items].m_end   = next - json;
+            items_out[nb_items].m_begin = (int)(str - json);
+            items_out[nb_items].m_end   = (int)(next - json);
             ++nb_items;
             if (nb_items >= max_items_out)
             {
@@ -354,10 +302,7 @@ namespace kle
         return nb_items;
     }
 
-    static bool key_cmp_str(const char* json, jsmntok_t const& tk, const char* str)
-    {
-        return ((tk.end - tk.start) == strlen(str)) && memcmp(json + tk.start, str, strlen(str)) == 0;
-    }
+    static bool  key_cmp_str(const char* json, jsmntok_t const& tk, const char* str) { return ((tk.end - tk.start) == strlen(str)) && memcmp(json + tk.start, str, strlen(str)) == 0; }
     static str_t value_to_str(const char* json, jsmntok_t const& tk) { return str_t(tk.start, tk.end); }
 
     static int parse(const char* json, jsmntok_t* tokens, int index, bkgrnd_t& bg)
@@ -367,18 +312,21 @@ namespace kle
         index++;
         for (int i = 0; i < size; ++i)
         {
-            if (key_cmp_str(json, tokens[index + i], "name"))
+            jsmntok_t const& token = tokens[index];
+            const char*      key   = json + token.start;
+            if (key_cmp_str(json, token, "name"))
             {
-                ++i;
-                bg.m_name = value_to_str(json, tokens[index + i]);
+                jsmntok_t const& value = tokens[index + 1];
+                bg.m_name              = value_to_str(json, value);
             }
-            else if (key_cmp_str(json, tokens[index + i], "style"))
+            else if (key_cmp_str(json, token, "style"))
             {
-                ++i;
-                bg.m_style = value_to_str(json, tokens[index + i]);
+                jsmntok_t const& value = tokens[index + 1];
+                bg.m_style             = value_to_str(json, value);
             }
+            index += 2;
         }
-        return index + size;
+        return index;
     }
 
     static int parse(const char* json, jsmntok_t* tokens, int index, kb_metadata_t& kbmd)
@@ -392,11 +340,12 @@ namespace kle
         index++;
         for (int i = 0; i < size; ++i)
         {
-            const jsmntok_t& token = tokens[index + i];
+            const jsmntok_t& token = tokens[index];
             if (token.type == JSMN_STRING)
             {
-                i++;
-                const jsmntok_t& value = tokens[index + i];
+                const char* key = json + token.start;
+
+                const jsmntok_t& value = tokens[index + 1];
                 if (key_cmp_str(json, token, "author"))
                 {
                     kbmd.m_author = value_to_str(json, value);
@@ -407,7 +356,8 @@ namespace kle
                 }
                 else if (key_cmp_str(json, token, "background"))
                 {
-                    index = parse(json, tokens, index + i, kbmd.m_background);
+                    index = parse(json, tokens, index + 1, kbmd.m_background);
+                    index -= 2;
                 }
                 else if (key_cmp_str(json, token, "notes"))
                 {
@@ -433,17 +383,13 @@ namespace kle
                 {
                     kbmd.m_switchType = value_to_str(json, value);
                 }
-                else
-                {
-                    // unknown string encountered in keyboard meta data
-                    break;
-                }
+                index += 2;
             }
         }
-        return index + size;
+        return index;
     }
 
-    static int parse(const char* json, jsmntok_t* tokens, int index, item_t& key)
+    static int parse(const char* json, jsmntok_t* tokens, int index, item_t& item)
     {
         // First token should be an object?
         int const size = tokens[index].size;
@@ -451,117 +397,133 @@ namespace kle
         {
             return index + 1 + size;
         }
+
+        index++;
+
         for (int i = 0; i < size; ++i)
         {
-            const jsmntok_t& token = tokens[index + i];
+            const jsmntok_t& token = tokens[index];
             if (token.type == JSMN_STRING)
             {
-                i++;
-                const jsmntok_t& value = tokens[index + i];
+                const char* key = json + token.start;
+
+                const jsmntok_t& value = tokens[index + 1];
                 if (key_cmp_str(json, token, "x"))
                 {
-                    key.x = value_to_str(json, value);
+                    item.x = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "y"))
                 {
-                    key.y = value_to_str(json, value);
+                    item.y = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "w"))
                 {
-                    key.w = value_to_str(json, value);
+                    item.w = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "h"))
                 {
-                    key.h = value_to_str(json, value);
+                    item.h = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "x2"))
                 {
-                    key.x2 = value_to_str(json, value);
+                    item.x2 = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "y2"))
                 {
-                    key.y2 = value_to_str(json, value);
+                    item.y2 = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "w2"))
                 {
-                    key.w2 = value_to_str(json, value);
+                    item.w2 = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "h2"))
                 {
-                    key.h2 = value_to_str(json, value);
+                    item.h2 = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "rx"))
                 {
-                    key.rx = value_to_str(json, value);
+                    item.rx = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "ry"))
                 {
-                    key.ry = value_to_str(json, value);
+                    item.ry = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "r"))
                 {
-                    key.r = value_to_str(json, value);
+                    item.r = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "a"))
                 {
-                    key.a = value_to_str(json, value);
+                    item.a = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "d"))
                 {
-                    key.d = value_to_str(json, value);
+                    item.d = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "g"))
                 {
-                    key.g = value_to_str(json, value);
+                    item.g = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "l"))
                 {
-                    key.l = value_to_str(json, value);
+                    item.l = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "n"))
                 {
-                    key.n = value_to_str(json, value);
+                    item.n = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "p"))
                 {
-                    key.p = value_to_str(json, value);
+                    item.p = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "f"))
                 {
-                    key.f = value_to_str(json, value);
+                    item.f = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "f2"))
                 {
-                    key.f2 = value_to_str(json, value);
+                    item.f2 = value_to_str(json, value);
+                }
+                else if (key_cmp_str(json, token, "fa"))
+                {
+                    // fa is an array of integers
+                    const int fa_size = value.size;
                 }
                 else if (key_cmp_str(json, token, "c"))
                 {
-                    key.c = value_to_str(json, value);
+                    item.c = value_to_str(json, value);
                 }
                 else if (key_cmp_str(json, token, "t"))
                 {
-                    key.c = value_to_str(json, value);
+                    item.c = value_to_str(json, value);
                 }
-                i++;
+
+                index += 2;
+            }
+            else
+            {
+                // Unknown item here, try and skip it
+                index += 2;
             }
         }
-        return index + size;
+        return index;
     }
 
-    bool read_kb_layout(const char* filename, kb_t& kb)
+    bool read(const char* filename, kb_t& kb)
     {
         // read raw file content
         FILE* pFile;
-        pFile = fopen(filename, "rb");
+        fopen_s(&pFile, filename, "rb");
         if (pFile == NULL)
         {
             printf("Error opening file %s\n", filename);
             return false;
         }
         fseek(pFile, 0, SEEK_END);
-        long lSize = ftell(pFile);
+        long lSize = ftell(pFile) + 16;
         rewind(pFile);
         char* buffer = (char*)malloc(sizeof(char) * lSize);
+        memset(buffer, 0, lSize);
         if (buffer == NULL)
         {
             printf("Error allocating memory\n");
@@ -571,21 +533,16 @@ namespace kle
         fclose(pFile);
 
         // parse json
+        const int   max_tokens = 2048;
+        jsmntok_t*  tokens     = (jsmntok_t*)malloc(sizeof(jsmntok_t) * max_tokens);
         jsmn_parser parser;
-        jsmntok_t*  tokens = (jsmntok_t*)malloc(sizeof(jsmntok_t) * 1024);
-        jsmn_init(&parser, tokens, 1024);
-        int num_tokens = jsmn_parse(&parser, buffer, strlen(buffer));
+        jsmn_init(&parser, tokens, max_tokens);
+        jsmn_strict(&parser, false);
+        int num_tokens = jsmn_parse(&parser, buffer, lSize);
         if (num_tokens < 0)
         {
             printf("Failed to parse JSON: %d\n", num_tokens);
             return false;
-        }
-
-        // Assume the top-level element is an object
-        if (tokens[0].type != JSMN_OBJECT)
-        {
-            printf("Object expected\n");
-            return 1;
         }
 
         // Initialize with defaults
@@ -601,8 +558,9 @@ namespace kle
             if (token.type == JSMN_ARRAY)
             {
                 ++r;
-                int a = token.size;
-                while (a > 0 && r < num_tokens)
+                int const n = token.size;
+                int       a = 0;
+                while (a < n && r < num_tokens)
                 {
                     token = tokens[r];
                     if (token.type == JSMN_STRING)
@@ -610,11 +568,13 @@ namespace kle
                         key_t newKey = copy(current);
 
                         r++;
-                        --a;
 
                         newKey.m_width2  = newKey.m_width2 == 0 ? current.m_width : current.m_width2;
                         newKey.m_height2 = newKey.m_height2 == 0 ? current.m_height : current.m_height2;
-                        reorderLabelsIn(newKey.m_labels, token, align);
+						
+						split(parser.begin, str_t(token.start, token.end), '\n', newKey.m_labels, 12);
+						reorderLabelsIn(newKey.m_labels, align);
+						reorderLabelsIn(newKey.m_textSize, align);
 
                         for (int i = 0; i < 12; ++i)
                         {
@@ -623,10 +583,6 @@ namespace kle
                                 newKey.m_textSize[i]  = 0;
                                 newKey.m_textColor[i] = color_t();
                             }
-                            if (newKey.m_textSize[i] == newKey.m_default_textSize)
-                                newKey.m_textSize[i] = 0;
-                            if (newKey.m_textColor[i] == newKey.m_default_textColor)
-                                newKey.m_textColor[i] = color_t();
                         }
 
                         // Add the key!
@@ -641,15 +597,12 @@ namespace kle
                     else
                     {
                         item_t item;
-                        int    n = parse(parser.begin, tokens, r, item);
-                        --a;
-
-                        if (r != 0 && (!item.r.is_null() || !item.rx.is_null() || !item.ry.is_null()))
+                        r = parse(parser.begin, tokens, r, item);
+                        if (a == 0 && (!item.r.is_null() || !item.rx.is_null() || !item.ry.is_null()))
                         {
                             // "rotation can only be specified on the first key in a row"
                             return false;
                         }
-                        r = n;
 
                         if (!item.r.is_null())
                             current.m_rotation_angle = item.r.to_int(parser.begin);
@@ -683,7 +636,7 @@ namespace kle
                             split(parser.begin, item.t, '\n', colors, 12);
                             if (!colors[0].is_null())
                                 current.m_default_textColor = colors[0].to_color(parser.begin);
-                            reorderLabelsIn(colors, token, align);
+                            reorderLabelsIn(colors, align);
                         }
                         if (!item.x.is_null())
                             current.m_x += item.x.to_int(parser.begin);
@@ -706,29 +659,36 @@ namespace kle
                         if (!item.h2.is_null())
                             current.m_height2 = item.h2.to_int(parser.begin);
                         if (!item.n.is_null())
-                            current.m_nub = item.n.to_int(parser.begin);
+                            current.m_nub = item.n.to_bool(parser.begin);
                         if (!item.l.is_null())
-                            current.m_stepped = item.l.to_int(parser.begin);
+                            current.m_stepped = item.l.to_bool(parser.begin);
                         if (!item.d.is_null())
-                            current.m_decal = item.d.to_int(parser.begin);
+                            current.m_decal = item.d.to_bool(parser.begin);
                         if (!item.g.is_null())
-                            current.m_ghost = item.g.to_int(parser.begin);
+                            current.m_ghost = item.g.to_bool(parser.begin);
 
                         current.m_y++;
                         current.m_x = current.m_rotation_x;
                     }
+
+                    a++;
                 }
             }
             else if (token.type == JSMN_OBJECT)
             {
-                if (r != 0)
+                if (r > 1)
                 {
                     // "keyboard metadata must the be first element"
                     return false;
                 }
                 r = parse(parser.begin, tokens, r, kb.m_meta);
-            }
+			}
+			else 
+			{
+				++r;
+			}
         }
+        return true;
     }
 
 } // namespace kle
