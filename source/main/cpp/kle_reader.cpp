@@ -488,6 +488,7 @@ namespace kle
                 {
                     // fa is an array of integers
                     const int fa_size = value.size;
+					index += fa_size;
                 }
                 else if (key_cmp_str(json, token, "c"))
                 {
@@ -598,7 +599,7 @@ namespace kle
                     {
                         item_t item;
                         r = parse(parser.begin, tokens, r, item);
-                        if (a == 0 && (!item.r.is_null() || !item.rx.is_null() || !item.ry.is_null()))
+                        if (a != 0 && (!item.r.is_null() || !item.rx.is_null() || !item.ry.is_null()))
                         {
                             // "rotation can only be specified on the first key in a row"
                             return false;
