@@ -9,6 +9,10 @@
 #define KLE_LABEL_MAX 12
 #define KLE_KEY_MAX 256
 
+#ifdef TARGET_MAC
+#define fopen_s(fp, filename, mode) *(fp) = fopen((filename), (mode))
+#endif
+
 namespace kle
 {
     static int to_digit(char c)
@@ -273,7 +277,7 @@ namespace kle
         str_t s;
     };
 
-    static int split(const char* json, str_t& item, char split, str_t* items_out, int max_items_out)
+    static int split(const char* json, str_t& item, char csplit, str_t* items_out, int max_items_out)
     {
         if (item.is_null())
             return 0;
@@ -286,7 +290,7 @@ namespace kle
         while (str < end)
         {
             const char* next = str;
-            while (next < end && *next != split)
+            while (next < end && *next != csplit)
             {
                 ++next;
             }
@@ -573,7 +577,8 @@ namespace kle
                         newKey.m_width2  = newKey.m_width2 == 0 ? current.m_width : current.m_width2;
                         newKey.m_height2 = newKey.m_height2 == 0 ? current.m_height : current.m_height2;
 						
-						split(parser.begin, str_t(token.start, token.end), '\n', newKey.m_labels, 12);
+                        str_t itemstr = str_t(token.start, token.end);
+						split(parser.begin, itemstr, '\n', newKey.m_labels, 12);
 						reorderLabelsIn(newKey.m_labels, align);
 						reorderLabelsIn(newKey.m_textSize, align);
 
